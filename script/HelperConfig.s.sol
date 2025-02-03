@@ -26,7 +26,7 @@ contract HelperConfig is CodeConstants,Script {
         bytes32 gasLane;
         uint32 callbackGasLimit;
         uint256 subscriptionId;
-        address link;
+        address linkToken; //anvilにはlinkがないので、linkを追加
         address account;
     }
 
@@ -34,12 +34,12 @@ contract HelperConfig is CodeConstants,Script {
     mapping(uint256 chainId => NetworkConfig) public networkConfigs;
 
     constructor() {
-    networkConfigs[ETH_SEPOLIA_CHAIN_ID] = getSepoliaEthConfig();
+        networkConfigs[ETH_SEPOLIA_CHAIN_ID] = getSepoliaEthConfig();
     }
 
     function getConfigByChainId(uint256 chainId) public returns (NetworkConfig memory) {
         if (networkConfigs[chainId].vrfCoordinator != address(0)) {
-            return networkConfigs[chainId];
+            return networkConfigs[chainId];  //sepolia、事前に設定されたconfigを返す
         } else if (chainId == LOCAL_CHAIN_ID) {
             return getOrCreateAnvilEthConfig();
         } else {
@@ -60,14 +60,26 @@ contract HelperConfig is CodeConstants,Script {
             gasLane: 0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae,
             callbackGasLimit: 500000, //500,000 gas
             subscriptionId: 105430411853989173522216311743659453206426700180708717357013772925073966068140,
-            link: 0x779877A7B0D9E8603169DdbD7836e478b4624789,
+            linkToken: 0x779877A7B0D9E8603169DdbD7836e478b4624789,
             account: 0xCd77572F2301b68B8340cb447bB2D233439EAC1C
             });
     }
 
+    // function getLocalConfig() public pure returns (NetworkConfig memory) {
+    //     return NetworkConfig({
+    //         entranceFee: 0.01 ether,
+    //         interval: 30, // 30 seconds
+    //         vrfCoordinator: address(0),
+    //         gasLane: "",
+    //         callbackGasLimit: 500000,
+    //         subscriptionId: 0
+    //     });
+    // }
+
     function getOrCreateAnvilEthConfig() public returns (NetworkConfig memory)
     {   
         // check to see if we set an active network config
+        //すでに設定されたlocalNetworkConfigがあればそれを返す、むだなgasを使わない
         if(localNetworkConfig.vrfCoordinator != address(0)) {
             return localNetworkConfig;
         }
@@ -77,7 +89,11 @@ contract HelperConfig is CodeConstants,Script {
         // uint96 gasPriceLink = 1e9; // 1 gwei LINK
 
         vm.startBroadcast();
-        VRFCoordinatorV2_5Mock vrfCoordinatorMock = new VRFCoordinatorV2_5Mock(MOCK_BASE_FEE,MOCK_GAS_PRICE_LINK,MOCK_WEI_PER_UINT_LINK);
+        VRFCoordinatorV2_5Mock vrfCoordinatorMock = new VRFCoordinatorV2_5Mock(
+            MOCK_BASE_FEE,
+            MOCK_GAS_PRICE_LINK,
+            MOCK_WEI_PER_UINT_LINK
+        );
         LinkToken linkToken = new LinkToken();
         vm.stopBroadcast();
 
@@ -89,7 +105,7 @@ contract HelperConfig is CodeConstants,Script {
             gasLane: 0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae,
             subscriptionId: 0, // If left as 0, our scripts will create one!
             callbackGasLimit: 500000, // might have to fix this
-            link: address(linkToken),
+            linkToken: address(linkToken),
             account: 0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38
         });
         return localNetworkConfig;
