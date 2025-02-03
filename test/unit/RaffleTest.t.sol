@@ -7,9 +7,9 @@ import {Test, console} from "forge-std/Test.sol";
 import {HelperConfig} from "script/HelperConfig.s.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {VRFCoordinatorV2_5Mock} from "@chainlink/contracts/src/v0.8/vrf/mocks/VRFCoordinatorV2_5Mock.sol";
+import {LinkToken} from "../mocks/LinkToken.sol";
 
 contract RaffleTest is Test {
-
     Raffle public raffle;
     HelperConfig public helperConfig;
 
@@ -17,9 +17,16 @@ contract RaffleTest is Test {
     uint256 interval;
     address vrfCoordinator;
     bytes32 gasLane;
-    uint256 subscriptionId; /** uint64ではエラーが出た */
+    uint256 subscriptionId;
+    address linkToken;
+    /**
+     * uint64ではエラーが出た
+     */
     uint32 callbackGasLimit;
-    address public PLAYER = makeAddr("player"); /** foundry用仮想アドレス生成 */
+    address public PLAYER = makeAddr("player");
+    /**
+     * foundry用仮想アドレス生成
+     */
     uint256 public constant STARTING_PLAYER_BALANCE = 10 ether;
 
     event RaffleEntered(address indexed player);
@@ -35,6 +42,19 @@ contract RaffleTest is Test {
         gasLane = config.gasLane;
         subscriptionId = config.subscriptionId;
         callbackGasLimit = config.callbackGasLimit;
+        // linkToken = LinkToken(config.linkToken); //linkTokenはアドレスなので、LinkTokenのインスタンスを生成する必要はない
+        linkToken = config.linkToken;
+
+        // (
+        //     entranceFee,
+        //     interval,
+        //     vrfCoordinator,
+        //     gasLane,
+        //     subscriptionId,
+        //     callbackGasLimit
+
+        // ) = helperConfig.activeNetworkConfig();  //getConfig()の方がネットワークに応じた設定に適切に対処できる
+
         vm.deal(PLAYER, STARTING_PLAYER_BALANCE);
     }
 
@@ -42,11 +62,14 @@ contract RaffleTest is Test {
         assert(uint256(raffle.getRaffleState()) == 0); // Raffle.RaffleState.OPEN -> 0
     }
 
+    /*//////////////////////////////////////////////////////////////
+                              ENTER RAFFLE
+    //////////////////////////////////////////////////////////////*/
     function testRaffleRevertWhenYouDontPayEnough() public {
         // Arrange
         vm.prank(PLAYER);
         // Act / Asset
-        vm.expectRevert(Raffle.Raffle__SendMoreToEnterRaffle.selector);
+        vm.expectRevert(Raffle.Raffle__NotEnoughEthSent.selector);
         raffle.enterRaffle();
     }
 
@@ -64,6 +87,7 @@ contract RaffleTest is Test {
         // Arrange
         vm.prank(PLAYER);
         // Act / Assert
+        //expect.Emit: 特定のイベントが発行されることを期待する
         vm.expectEmit(true, false, false, false, address(raffle));
         emit RaffleEntered(PLAYER);
         raffle.enterRaffle{value: entranceFee}();
@@ -75,7 +99,11 @@ contract RaffleTest is Test {
         raffle.enterRaffle{value: entranceFee}();
         vm.warp(block.timestamp + interval + 1);
         vm.roll(block.number + 1);
-        raffle.performUpkeep(""); /** 動画でのここの解釈が不明(Adding a consumer) */
+        raffle.performUpkeep("");
+        /**
+         * performUpkeep() を呼ぶことで、Chainlink VRF の consumer（コントラクト）として登録される可能性がある
+         * つまり、VRF が fulfillRandomWords() をコールバックする準備が整う
+         */
 
         // Act / Assert
         vm.expectRevert(Raffle.Raffle__RaffleNotOpen.selector);
@@ -83,8 +111,12 @@ contract RaffleTest is Test {
         raffle.enterRaffle{value: entranceFee}();
     }
 
+    /*//////////////////////////////////////////////////////////////
+                            CHECKUPKEEP
+    //////////////////////////////////////////////////////////////*/
     function testCheckUpkeepReturnsFalseIfItHasNoBalance() public {
         // Arrange
+        //warpで時間を進める、rollでブロックナンバーを進める
         vm.warp(block.timestamp + interval + 1);
         vm.roll(block.number + 1);
         // Act
@@ -102,7 +134,7 @@ contract RaffleTest is Test {
         raffle.performUpkeep("");
         Raffle.RaffleState raffleState = raffle.getRaffleState();
         // Act
-        (bool upkeepNeeded, ) = raffle.checkUpkeep("");
+        (bool upkeepNeeded,) = raffle.checkUpkeep("");
         // Assert
         assert(raffleState == Raffle.RaffleState.CALCULATING);
         assert(upkeepNeeded == false);
@@ -132,6 +164,9 @@ contract RaffleTest is Test {
         assert(upkeepNeeded);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                            PERFORMUPKEEP
+    //////////////////////////////////////////////////////////////*/
     // Perform Upkeep
     function testPerformUpkeepCanOnlyRunIfCheckUpkeepIsTrue() public {
         // Arrange
@@ -141,7 +176,10 @@ contract RaffleTest is Test {
         vm.roll(block.number + 1);
         // Act / Assert
         // It doesnt revert
-        raffle.performUpkeep(""); /** 条件が揃っているためrevertはされない */
+        raffle.performUpkeep("");
+        /**
+         * 条件が揃っているためrevertはされない
+         */
     }
 
     function testPerformUpkeepRevertsIfCheckUpkeepIsFalse() public {
@@ -158,7 +196,10 @@ contract RaffleTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(Raffle.Raffle__UpkeepNotNeeded.selector, currentBalance, numPlayers, rState)
         );
-        raffle.performUpkeep(""); /** Raffle__UpkeepNotNeededがエラー(revert)されることを期待 */
+        raffle.performUpkeep("");
+        /**
+         * Raffle__UpkeepNotNeededがエラー(revert)されることを期待
+         */
     }
 
     // Act
@@ -181,7 +222,7 @@ contract RaffleTest is Test {
     function testPerformUpkeepUpdatesRaffleStateAndEmitsRequestId() public raffleEntered {
         vm.recordLogs(); // performUpkeepの実行中に発行されるイベントログを記録
         raffle.performUpkeep(""); // emits requestId
-        Vm.Log[] memory entries = vm.getRecordedLogs(); // performUpkeepの実行中に発行されたログをすべて取得し、entries配列に格納
+        Vm.Log[] memory entries = vm.getRecordedLogs(); // performUpkeepの実行中に発行されたログをすべて取得し、entries配列に格納、vrfCoordinatorからの大きなイベントは最初に発行されることがわかっているので、我々のイベントは2番目、つまりentries[1]である
         bytes32 requestId = entries[1].topics[1]; // entries[1]から、トピックとして格納されているリクエストIDを取得(entries[0]にはvrfCoodinetor)
         // Assert
         Raffle.RaffleState raffleState = raffle.getRaffleState();
@@ -191,7 +232,11 @@ contract RaffleTest is Test {
     }
 
     // fuzz test
-    function testFulfillRandomWordsCanOnlyBeCalledAfterPerformUpkeep(uint256 randomRequestId) public raffleEntered skipFork {
+    function testFulfillRandomWordsCanOnlyBeCalledAfterPerformUpkeep(uint256 randomRequestId)
+        public
+        raffleEntered
+        skipFork
+    {
         // Arrange/ Act / Assert
         vm.expectRevert(VRFCoordinatorV2_5Mock.InvalidRequest.selector);
         VRFCoordinatorV2_5Mock(vrfCoordinator).fulfillRandomWords(randomRequestId, address(raffle)); // randomRequestIdで256(foundry.toml)通りのテスト
@@ -200,12 +245,12 @@ contract RaffleTest is Test {
     function testFulfillRandomWordsPicksAWinnerResetsAndSendsMoney() public raffleEntered skipFork {
         // Arrange
         uint256 additionalEntrances = 3; // 4 total
-        uint256 startingIndex = 1; // We have starting index be 1 so we can start with address(1) and not address(0)
+        uint256 startingIndex = 1; // We have starting index be 1 so we can start with address(1) and not address(0),address(0)はイーサリアムで重要を持つアドレスなので、テストに使うのは避ける
         address expectedWinner = address(1);
 
         for (uint256 i = startingIndex; i < startingIndex + additionalEntrances; i++) {
             address newPlayer = address(uint160(i));
-            hoax(newPlayer, 1 ether); // deal 1 eth to the player
+            hoax(newPlayer, 1 ether); // deal 1 eth to the player,deal + prank
             raffle.enterRaffle{value: entranceFee}();
         }
 
@@ -215,8 +260,8 @@ contract RaffleTest is Test {
         vm.recordLogs();
         raffle.performUpkeep(""); // emits requestId
         Vm.Log[] memory entries = vm.getRecordedLogs();
-        bytes32 requestId = entries[1].topics[1]; // get the requestId from the logs
-        VRFCoordinatorV2_5Mock(vrfCoordinator).fulfillRandomWords(uint256(requestId), address(raffle));
+        bytes32 requestId = entries[1].topics[1]; // get the requestId from the logs, #226と同様
+        VRFCoordinatorV2_5Mock(vrfCoordinator).fulfillRandomWords(uint256(requestId), address(raffle)); //pretend to be the chainlink node
         // Assert
         address recentWinner = raffle.getRecentWinner();
         Raffle.RaffleState raffleState = raffle.getRaffleState();
