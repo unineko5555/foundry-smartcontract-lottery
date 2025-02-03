@@ -7,6 +7,8 @@ import {VRFCoordinatorV2_5Mock} from "@chainlink/contracts/src/v0.8/vrf/mocks/VR
 import {LinkToken} from "../test/mocks/LinkToken.sol";
 import {DevOpsTools} from "lib/foundry-devops/src/DevOpsTools.sol";
 
+//chainlinkのsubscriptionを作成し、fundする。consumer(Raffle)を追加する
+//fundには3LINKが必要なのでHelperConfigでlinkを設定しておく
 contract CreateSubscription is  Script {
     function createSubscriptionUsingConfig() public returns (uint256, address) {
         HelperConfig helperConfig = new HelperConfig();
@@ -20,6 +22,7 @@ contract CreateSubscription is  Script {
     {
         console.log("Creating subscription on chainId: ", block.chainid);
         vm.startBroadcast(account);
+        // SubscriptionAPIのcreateSubscriptionを呼び出す
         uint256 subId = VRFCoordinatorV2_5Mock(vrfCoordinator).createSubscription();
         vm.stopBroadcast();
         console.log("Your subscription Id is: ", subId);
@@ -40,10 +43,18 @@ contract FundSubscription is Script, CodeConstants {
         HelperConfig helperConfig = new HelperConfig();
         address vrfCoordinator = helperConfig.getConfig().vrfCoordinator;
         uint256 subscriptionId = helperConfig.getConfig().subscriptionId;
-        address linkToken = helperConfig.getConfig().link;
+        address linkToken = helperConfig.getConfig().linkToken;
         address account = helperConfig.getConfig().account;
         fundSubscription(vrfCoordinator, subscriptionId, linkToken, account);
-    }
+
+    // if (subscriptionId == 0) {
+    //         CreateSubscription createSub = new CreateSubscription();
+    //         (uint256 updatedSubId, address updatedVRFv2) = createSub.run(); //createSub.run()の返り値が0になっておりエラー発生
+    //         subscriptionId = updatedSubId;
+    //         vrfCoordinator = updatedVRFv2;
+    //         console.log("New SubId Created! ", subscriptionId, "VRF Address: ", vrfCoordinator);
+    // }
+}
 
     function fundSubscription(address vrfCoordinator,uint256 subscriptionId, address linkToken, address account) public {
         console.log("Funding subscription: ", subscriptionId);
@@ -52,13 +63,13 @@ contract FundSubscription is Script, CodeConstants {
 
         if (block.chainid == LOCAL_CHAIN_ID) {
             vm.startBroadcast(account);
-            VRFCoordinatorV2_5Mock(vrfCoordinator).fundSubscription(subscriptionId, FUND_AMOUNT * 100);
+            VRFCoordinatorV2_5Mock(vrfCoordinator).fundSubscription(subscriptionId, FUND_AMOUNT* 100); //testFulfillRandomWordsPicksAWinnerResetsAndSendsMoneyのInvalidRequest()エラーを解消するために*100を追加
             vm.stopBroadcast();
         } else {
-            // console.log(LinkToken(link).balanceOf(msg.sender));
-            // console.log(msg.sender);
-            // console.log(LinkToken(link).balanceOf(address(this)));
-            // console.log(address(this));
+            console.log(LinkToken(linkToken).balanceOf(msg.sender));
+            console.log(msg.sender);
+            console.log(LinkToken(linkToken).balanceOf(address(this)));
+            console.log(address(this));
             vm.startBroadcast();
             LinkToken(linkToken).transferAndCall(vrfCoordinator, FUND_AMOUNT, abi.encode(subscriptionId));
             vm.stopBroadcast();
