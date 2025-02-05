@@ -15,6 +15,7 @@ import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/autom
  */
 // 0x9ddfaca8183c41ad55329bdeed9f6a8d53168b1b => VRFCoordinator
 // 54528670710849503547892655734386820566589065322714869834102560641565075666367 => subId
+//Note: Chainlink VRF2.5
 contract Raffle is VRFConsumerBaseV2Plus, AutomationCompatibleInterface {
 
     /* ERRORS */

@@ -30,7 +30,7 @@ contract DeployRaffle is Script {
             // helperConfig.setConfig(block.chainid, config); /** githubにはあるが動画にはないのでコメントアウト */
         }
 
-        vm.startBroadcast(config.account);
+        vm.startBroadcast(config.account); //accountを入れる理由が不明、--fork-url
         Raffle raffle = new Raffle(
             config.entranceFee,
             config.interval,

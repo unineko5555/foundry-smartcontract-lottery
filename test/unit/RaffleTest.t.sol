@@ -4,12 +4,12 @@ pragma solidity ^0.8.19;
 import {DeployRaffle} from "../../script/DeployRaffle.s.sol";
 import {Raffle} from "src/Raffle.sol";
 import {Test, console} from "forge-std/Test.sol";
-import {HelperConfig} from "script/HelperConfig.s.sol";
+import {HelperConfig, CodeConstants} from "script/HelperConfig.s.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {VRFCoordinatorV2_5Mock} from "@chainlink/contracts/src/v0.8/vrf/mocks/VRFCoordinatorV2_5Mock.sol";
 import {LinkToken} from "../mocks/LinkToken.sol";
 
-contract RaffleTest is Test {
+contract RaffleTest is CodeConstants, Test {
     Raffle public raffle;
     HelperConfig public helperConfig;
 
@@ -23,18 +23,21 @@ contract RaffleTest is Test {
      * uint64ではエラーが出た
      */
     uint32 callbackGasLimit;
-    address public PLAYER = makeAddr("player");
     /**
      * foundry用仮想アドレス生成
      */
+    address public PLAYER = makeAddr("player");
     uint256 public constant STARTING_PLAYER_BALANCE = 10 ether;
+    uint256 public constant LINK_BALANCE = 100 ether;
 
-    event RaffleEntered(address indexed player);
+    event EnteredRaffle(address indexed player);
     event WinnerPicked(address indexed winner);
 
     function setUp() external {
         DeployRaffle deployer = new DeployRaffle();
         (raffle, helperConfig) = deployer.deployContract();
+        vm.deal(PLAYER, STARTING_PLAYER_BALANCE);
+
         HelperConfig.NetworkConfig memory config = helperConfig.getConfig();
         entranceFee = config.entranceFee;
         interval = config.interval;
@@ -44,7 +47,15 @@ contract RaffleTest is Test {
         callbackGasLimit = config.callbackGasLimit;
         // linkToken = LinkToken(config.linkToken); //linkTokenはアドレスなので、LinkTokenのインスタンスを生成する必要はない
         linkToken = config.linkToken;
+        LinkToken linkToken = new LinkToken();
 
+        vm.startPrank(msg.sender);
+        if (block.chainid == LOCAL_CHAIN_ID) {
+            linkToken.mint(msg.sender, LINK_BALANCE); //Link発行
+            VRFCoordinatorV2_5Mock(vrfCoordinator).fundSubscription(subscriptionId, LINK_BALANCE); //MockvrfCoodinatorにLinkを供給
+        }
+        linkToken.approve(vrfCoordinator, LINK_BALANCE); //vrfCoodinatorがLinkを使用できるように
+        vm.stopPrank();
         // (
         //     entranceFee,
         //     interval,
@@ -54,8 +65,6 @@ contract RaffleTest is Test {
         //     callbackGasLimit
 
         // ) = helperConfig.activeNetworkConfig();  //getConfig()の方がネットワークに応じた設定に適切に対処できる
-
-        vm.deal(PLAYER, STARTING_PLAYER_BALANCE);
     }
 
     function testRaffleInitializesInOpenState() public view {
@@ -89,7 +98,7 @@ contract RaffleTest is Test {
         // Act / Assert
         //expect.Emit: 特定のイベントが発行されることを期待する
         vm.expectEmit(true, false, false, false, address(raffle));
-        emit RaffleEntered(PLAYER);
+        emit EnteredRaffle(PLAYER);
         raffle.enterRaffle{value: entranceFee}();
     }
 
@@ -203,6 +212,7 @@ contract RaffleTest is Test {
     }
 
     // Act
+    //MetaMultiSigWalletエラー解消のために??
     modifier raffleEntered() {
         vm.prank(PLAYER);
         raffle.enterRaffle{value: entranceFee}();
@@ -243,10 +253,10 @@ contract RaffleTest is Test {
     }
 
     function testFulfillRandomWordsPicksAWinnerResetsAndSendsMoney() public raffleEntered skipFork {
+        address expectedWinner = address(1);
         // Arrange
         uint256 additionalEntrances = 3; // 4 total
         uint256 startingIndex = 1; // We have starting index be 1 so we can start with address(1) and not address(0),address(0)はイーサリアムで重要を持つアドレスなので、テストに使うのは避ける
-        address expectedWinner = address(1);
 
         for (uint256 i = startingIndex; i < startingIndex + additionalEntrances; i++) {
             address newPlayer = address(uint160(i));

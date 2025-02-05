@@ -37,6 +37,8 @@ error NotEnoughEthSent();
  * @notice This contract is for creating a sample raffle
  * @dev It implements Chainlink VRFv2 and Chainlink Automation
  */
+
+ //Note: Chainlink VRF2.0
 contract Raffle is
     VRFConsumerBaseV2Plus // VRFConsumerBaseV2→VRFConsumerBaseV2Plusに変更
 {
